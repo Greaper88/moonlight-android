@@ -71,11 +71,9 @@ The presentation uses its own display density and does not request keyboard or
 controller focus. Android's existing native keyboard capture stays in the main
 streaming window.
 
-**Actual Thor hardware testing is still needed.** Its firmware must expose the
-lower panel as a presentation display, and touches there must not steal the main
-Activity's input focus. The implementation follows the presentation approach used
-by melonDS Android, but a successful build and unit checks do not establish those
-OEM behaviors. There is no real Thor attached to this build environment.
+**Hardware report (2026-10-17):** Greaper88 confirmed that dual-screen mode works
+on their Thor. This confirmation comes from the maintainer's real-device use;
+the automated build and control checks are recorded separately.
 
 ## Suggested checks
 

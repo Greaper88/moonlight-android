@@ -9,3 +9,5 @@ checks. Earlier touchscreen tab/scroll details are in GRIMM-TOUCH-TESTING.md;
 controller and OSK details are in GRIMM-CONTROLS-TESTING.md.
 
 Package and signing identity remain unchanged from earlier Grimm builds.
+
+Greaper88 confirmed dual-screen mode working on their Thor on **2026-10-17**.

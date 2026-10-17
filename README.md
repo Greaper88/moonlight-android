@@ -11,7 +11,7 @@ Download the APK from [Grimm releases](https://github.com/Greaper88/moonlight-an
 
 Grimm uses package `com.limelight.sharedip`. Install new Grimm releases over an existing Grimm installation to retain pairings and settings. The upstream Play Store app is a separate installation.
 
-Dual-screen support is experimental; Thor-specific touch and input-focus behavior still needs device testing. See the [dual-screen setup and testing guide](GRIMM-DUAL-SCREEN-TESTING.md) and [other Grimm testing notes](GRIMM-TESTING.md).
+Dual-screen mode is confirmed working on Greaper88's Thor. See the [dual-screen setup and testing guide](GRIMM-DUAL-SCREEN-TESTING.md) and [other Grimm testing notes](GRIMM-TESTING.md).
 
 Grimm versions use `<upstream version>.g<revision>`, such as **12.2.g5**. The `g` identifies the Grimm revision; this numbering continues from the earlier `12.2-Grimm.1` through `.4` builds. Android's internal version code keeps increasing across all updates.
 
