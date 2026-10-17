@@ -1,6 +1,6 @@
 # Moonlight (Grimm) — optional dual-screen controls
 
-Version **12.2-Grimm.4**, versionCode **318**. Install over the current Grimm app
+Version **12.2.g5**, versionCode **319**. Install over the current Grimm app
 without uninstalling. Package `com.limelight.sharedip` and signing key are retained;
 existing pairings, hosts and settings should carry over.
 
@@ -34,6 +34,29 @@ where the streaming Activity runs. Display IDs are not assumed to be 0 and 1.
 
 This is a local control surface using the existing streaming connection. It does
 not create a second video stream or a second Wolf session.
+
+## Secondary-screen statistics
+
+Tap **Show stats** in the upper-left, opposite **Show keyboard**, to replace the
+touchpad with a scrollable stream/device readout. **Hide stats** restores the
+touchpad and mouse buttons. The keyboard can remain open alongside stats. Stats
+start hidden each time the secondary controls are created.
+
+Stream readings include the existing Moonlight resolution/FPS, decoder, incoming
+and rendered FPS, network drops/latency, host processing latency when supplied,
+and decoding time. The configured bitrate is labeled **Bitrate target**, not a
+measurement of actual traffic. Stream readings update about once per second
+while frames arrive, independently of the primary-screen performance overlay.
+
+Device readings include manufacturer/model, Android version, battery level/power
+state, **battery** temperature, available/total RAM, thermal status on Android 10+
+when reported, and both displays' resolution/refresh rate. Device readings refresh
+every three seconds while the panel is visible; unsupported readings are omitted.
+No CPU/GPU temperature is inferred from battery temperature. Closing the panel,
+backgrounding the app, or removing the display stops the extra stats collection.
+
+Reading or scrolling this panel sends no mouse movement or clicks to the host.
+Switching to stats releases active touchpad drags/clicks first.
 
 ## Fallback and device behavior
 
@@ -72,6 +95,13 @@ OEM behaviors. There is no real Thor attached to this build environment.
    be available as fallback; reconnect/wake and confirm controls can return.
 8. Recheck the existing touchscreen edge tab, accelerated scroll, Hold Esc and
    two clients at 7.5 Mbps behind the same IP. Wolf is not changed or restarted.
+9. With the normal performance overlay OFF, open **Show stats** on the lower
+   screen. Confirm FPS/latency update while the primary overlay stays off. Scroll
+   the readout and confirm no host clicks/scrolling occur. Toggle the keyboard
+   while stats are open, then hide stats and check the pad/drag buttons return.
+10. Repeat with the normal overlay ON and confirm it remains visible after closing
+    the lower stats. Background/remove the display while stats are open; resume
+    and confirm there are no stuck inputs and stats begin hidden.
 
 ## Build and checks
 

@@ -75,6 +75,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private String glRenderer;
     private boolean foreground = true;
     private PerfOverlayListener perfListener;
+    private volatile boolean secondaryStatsEnabled;
 
     private static final int CR_MAX_TRIES = 10;
     private static final int CR_RECOVERY_TYPE_NONE = 0;
@@ -440,6 +441,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     public int getActiveVideoFormat() {
         return this.videoFormat;
+    }
+
+    /** A separate stats consumer must not change the user's primary-overlay preference. */
+    public void setSecondaryStatsEnabled(boolean enabled) {
+        secondaryStatsEnabled = enabled;
     }
 
     private MediaFormat createBaseMediaFormat(String mimeType) {
@@ -1372,7 +1378,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         // Flip stats windows roughly every second
         if (SystemClock.uptimeMillis() >= activeWindowVideoStats.measurementStartTimestamp + 1000) {
-            if (prefs.enablePerfOverlay) {
+            if (prefs.enablePerfOverlay || secondaryStatsEnabled) {
                 VideoStats lastTwo = new VideoStats();
                 lastTwo.add(lastWindowVideoStats);
                 lastTwo.add(activeWindowVideoStats);

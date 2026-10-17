@@ -32,6 +32,7 @@ import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.ui.GameGestures;
 import com.limelight.ui.StreamKeyboard;
 import com.limelight.ui.DualScreenControlsPresentation;
+import com.limelight.ui.DeviceStats;
 import com.limelight.ui.SecondaryDisplaySelection;
 import com.limelight.ui.StreamTouchToolbar;
 import com.limelight.ui.StreamView;
@@ -65,6 +66,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Rational;
 import android.view.Display;
 import android.view.Gravity;
@@ -145,6 +148,20 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private StreamView streamView;
     private StreamKeyboard streamKeyboard;
     private DualScreenControlsPresentation secondaryControls;
+    private static final long SECONDARY_DEVICE_STATS_INTERVAL_MS = 3000;
+    private final Handler secondaryStatsHandler = new Handler(Looper.getMainLooper());
+    private String latestStreamStats;
+    private long latestStreamStatsTime;
+    private String latestDeviceStats;
+    private final Runnable secondaryStatsRefresh = new Runnable() {
+        @Override public void run() {
+            if (!areSecondaryStatsActive()) return;
+            latestDeviceStats = DeviceStats.collect(Game.this,
+                    getWindowManager().getDefaultDisplay(), secondaryControls.getDisplay());
+            refreshSecondaryStatsText();
+            secondaryStatsHandler.postDelayed(this, SECONDARY_DEVICE_STATS_INTERVAL_MS);
+        }
+    };
     private DisplayManager dualScreenDisplayManager;
     private boolean dualScreenDisplayListenerRegistered;
     private boolean dualScreenActivityResumed;
@@ -1656,13 +1673,14 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                         sendStreamKeyboardKey(keyCode, modifiers);
                     }
                     @Override public void onCloseRequested() { hideStreamKeyboard(true); }
-                }, this::toggleKeyboard);
+                }, this::toggleKeyboard, this::onSecondaryStatsVisibilityChanged);
         presentation.setOnDismissListener(dialog -> {
             if (secondaryControls == presentation) {
                 boolean wasKeyboardVisible = streamKeyboardVisible;
                 hideStreamKeyboard(false);
                 presentation.cancelInput();
                 secondaryControls = null;
+                onSecondaryStatsVisibilityChanged();
                 if (wasKeyboardVisible && connected && dualScreenActivityResumed && hasWindowFocus()) {
                     toggleKeyboard();
                 }
@@ -1671,10 +1689,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         secondaryControls = presentation;
         try {
             presentation.show();
+            onSecondaryStatsVisibilityChanged();
             dualScreenAvailabilityNotified = false;
         } catch (WindowManager.InvalidDisplayException | WindowManager.BadTokenException | SecurityException e) {
             LimeLog.warning("Unable to show second-screen controls: " + e);
             secondaryControls = null;
+            onSecondaryStatsVisibilityChanged();
             presentation.dispose();
             failedControlsDisplayId = selectedId;
             showDualScreenUnavailable();
@@ -1687,8 +1707,35 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (presentation != null) {
             hideStreamKeyboard(false);
             secondaryControls = null;
+            onSecondaryStatsVisibilityChanged();
             presentation.dispose();
         }
+    }
+
+    private boolean areSecondaryStatsActive() {
+        return secondaryControls != null && secondaryControls.isShowing() &&
+                secondaryControls.isStatsVisible() && connected && dualScreenActivityResumed &&
+                !isHidingOverlays && hasWindowFocus();
+    }
+
+    private void onSecondaryStatsVisibilityChanged() {
+        secondaryStatsHandler.removeCallbacks(secondaryStatsRefresh);
+        boolean active = areSecondaryStatsActive();
+        if (decoderRenderer != null) decoderRenderer.setSecondaryStatsEnabled(active);
+        if (active) secondaryStatsRefresh.run();
+        else latestDeviceStats = null;
+    }
+
+    private void refreshSecondaryStatsText() {
+        if (!areSecondaryStatsActive()) return;
+        boolean recent = latestStreamStats != null &&
+                SystemClock.uptimeMillis() - latestStreamStatsTime <= SECONDARY_DEVICE_STATS_INTERVAL_MS;
+        String text = getString(R.string.grimm_stats_stream_heading) + "\n" +
+                (recent ? latestStreamStats : getString(R.string.grimm_stats_waiting)) + "\n" +
+                getString(R.string.grimm_stats_bitrate_target, prefConfig.bitrate / 1000f) + "\n\n" +
+                getString(R.string.grimm_stats_device_heading) + "\n" +
+                (latestDeviceStats != null ? latestDeviceStats : "");
+        secondaryControls.setStatsText(text);
     }
 
     private void updateTouchKeyboardToolbar() {
@@ -3057,6 +3104,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             @Override
             public void run() {
                 performanceOverlayView.setText(text);
+                latestStreamStats = text;
+                latestStreamStatsTime = SystemClock.uptimeMillis();
+                refreshSecondaryStatsText();
             }
         });
     }

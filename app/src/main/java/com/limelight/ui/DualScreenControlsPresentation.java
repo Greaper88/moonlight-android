@@ -11,15 +11,18 @@ import android.graphics.drawable.StateListDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.limelight.R;
@@ -32,17 +35,23 @@ public final class DualScreenControlsPresentation extends Presentation {
     private final PreferenceConfiguration preferences;
     private final StreamKeyboard.Listener keyListener;
     private final Runnable toggleKeyboard;
+    private final Runnable statsVisibilityChanged;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private StreamKeyboard keyboard;
     private KeyboardContainer keyboardContainer;
     private TextView keyboardButton;
+    private TextView statsButton;
+    private TextView statsTextView;
+    private ScrollView statsPanel;
     private TextView touchpadView;
     private LinearLayout mouseButtons;
     private MouseButtonView leftButton;
     private MouseButtonView rightButton;
     private DualScreenTouchpad touchpad;
     private boolean keyboardVisible;
+    private boolean statsVisible;
     private boolean disposed;
+    private String statsText;
     private float pendingX;
     private float pendingY;
     private float pendingScroll;
@@ -50,7 +59,8 @@ public final class DualScreenControlsPresentation extends Presentation {
 
     public DualScreenControlsPresentation(Activity owner, Display display, NvConnection connection,
                                           PreferenceConfiguration preferences,
-                                          StreamKeyboard.Listener keyListener, Runnable toggleKeyboard) {
+                                          StreamKeyboard.Listener keyListener, Runnable toggleKeyboard,
+                                          Runnable statsVisibilityChanged) {
         super(owner, display, android.R.style.Theme_Material_NoActionBar);
         if (connection == null || preferences == null || keyListener == null || toggleKeyboard == null) {
             throw new IllegalArgumentException("Connection, preferences and keyboard callbacks are required");
@@ -59,6 +69,7 @@ public final class DualScreenControlsPresentation extends Presentation {
         this.preferences = preferences;
         this.keyListener = keyListener;
         this.toggleKeyboard = toggleKeyboard;
+        this.statsVisibilityChanged = statsVisibilityChanged;
     }
 
     @Override
@@ -103,10 +114,24 @@ public final class DualScreenControlsPresentation extends Presentation {
         LinearLayout header = new LinearLayout(context);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(12), 0, dp(8), 0);
+        header.setPadding(dp(8), 0, dp(8), 0);
+        statsButton = button(context);
+        statsButton.setOnClickListener(view -> {
+            if (disposed || !isShowing()) return;
+            // Release a drag or delayed tap before the same space becomes local-only content.
+            cancelInput();
+            statsVisible = !statsVisible;
+            updateStatsVisibility();
+            if (statsVisibilityChanged != null) statsVisibilityChanged.run();
+        });
+        header.addView(statsButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(44)));
         TextView title = text(context, 16);
         title.setText(R.string.grimm_dual_screen_controls_title);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        title.setPadding(dp(8), 0, dp(8), 0);
         header.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1));
         keyboardButton = button(context);
         keyboardButton.setOnClickListener(view -> {
@@ -157,10 +182,30 @@ public final class DualScreenControlsPresentation extends Presentation {
         touchpadView.setPadding(dp(12), dp(8), dp(12), dp(8));
         touchpadView.setBackground(background(Color.rgb(27, 32, 39)));
         touchpadView.setOnTouchListener(this::onTouchpadEvent);
+        FrameLayout contentArea = new FrameLayout(context);
+        contentArea.setFocusable(false);
         LinearLayout.LayoutParams padLayout = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1);
         padLayout.setMargins(dp(8), dp(4), dp(8), dp(4));
-        root.addView(touchpadView, padLayout);
+        contentArea.addView(touchpadView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        // This panel handles its own scrolling. It never forwards touches to the host touchpad,
+        // and cannot take controller or keyboard focus from the streaming Activity.
+        statsPanel = new ScrollView(context);
+        statsPanel.setFocusable(false);
+        statsPanel.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        statsPanel.setFillViewport(true);
+        statsPanel.setBackground(background(Color.rgb(27, 32, 39)));
+        statsTextView = text(context, 14);
+        statsTextView.setGravity(Gravity.TOP | Gravity.START);
+        statsTextView.setPadding(dp(12), dp(10), dp(12), dp(10));
+        statsTextView.setTextIsSelectable(false);
+        statsPanel.addView(statsTextView, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+        contentArea.addView(statsPanel, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        root.addView(contentArea, padLayout);
 
         mouseButtons = new LinearLayout(context);
         mouseButtons.setOrientation(LinearLayout.HORIZONTAL);
@@ -190,6 +235,8 @@ public final class DualScreenControlsPresentation extends Presentation {
             window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
         }
         updateKeyboardVisibility();
+        setStatsText(statsText);
+        updateStatsVisibility();
     }
 
     /** Available after show() creates the presentation; controller input stays with the owner Activity. */
@@ -199,6 +246,23 @@ public final class DualScreenControlsPresentation extends Presentation {
 
     public boolean isKeyboardVisible() {
         return keyboardVisible;
+    }
+
+    public boolean isStatsVisible() {
+        return statsVisible;
+    }
+
+    /** Update the local readout without changing its visibility or scroll position. */
+    public void setStatsText(String text) {
+        if (disposed) return;
+        statsText = text;
+        if (statsTextView != null) {
+            CharSequence displayText = text == null || text.isEmpty() ?
+                    getContext().getString(R.string.grimm_dual_screen_stats_loading) : text;
+            if (!TextUtils.equals(statsTextView.getText(), displayText)) {
+                statsTextView.setText(displayText);
+            }
+        }
     }
 
     public void setKeyboardVisible(boolean visible) {
@@ -217,18 +281,27 @@ public final class DualScreenControlsPresentation extends Presentation {
         updateControlsLayout();
     }
 
+    private void updateStatsVisibility() {
+        if (statsPanel == null || touchpadView == null) return;
+        statsPanel.setVisibility(statsVisible ? View.VISIBLE : View.GONE);
+        touchpadView.setVisibility(statsVisible ? View.GONE : View.VISIBLE);
+        statsButton.setText(statsVisible ? R.string.grimm_dual_screen_hide_stats :
+                R.string.grimm_dual_screen_show_stats);
+        updateControlsLayout();
+    }
+
     private void updateControlsLayout() {
         if (keyboardContainer == null || mouseButtons == null) return;
         // On shorter displays the pad's tap gestures remain available, while hiding this row
         // gives the complete keyboard usable keys instead of shrinking it to a narrow strip.
-        boolean showMouseButtons = !keyboardVisible || controlsHeight >= dp(360);
+        boolean showMouseButtons = !statsVisible && (!keyboardVisible || controlsHeight >= dp(360));
         mouseButtons.setVisibility(showMouseButtons ? View.VISIBLE : View.GONE);
         touchpadView.setText(!showMouseButtons ?
                 getContext().getString(R.string.grimm_dual_screen_touchpad_title) :
                 getContext().getString(R.string.grimm_dual_screen_touchpad_title) + "\n\n" +
                         getContext().getString(R.string.grimm_dual_screen_touchpad_hint));
         int available = Math.max(1, controlsHeight - dp(52) - (showMouseButtons ? dp(48) : 0));
-        int reservedPad = Math.min(dp(96), Math.round(available * 0.25f));
+        int reservedPad = Math.min(dp(statsVisible ? 120 : 96), Math.round(available * 0.25f));
         keyboardContainer.setMaximumHeight(Math.max(1,
                 Math.min(Math.round(controlsHeight * 0.7f), available - reservedPad)));
     }
@@ -262,7 +335,7 @@ public final class DualScreenControlsPresentation extends Presentation {
     }
 
     private boolean onTouchpadEvent(View view, MotionEvent event) {
-        if (disposed || !isShowing()) return true;
+        if (disposed || !isShowing() || statsVisible) return true;
         int action = event.getActionMasked();
         int index = event.getActionIndex();
         if (action == MotionEvent.ACTION_DOWN) {
@@ -374,7 +447,7 @@ public final class DualScreenControlsPresentation extends Presentation {
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            if (disposed || !isShowing()) return true;
+            if (disposed || !isShowing() || statsVisible) return true;
             if ((event.getFlags() & MotionEvent.FLAG_CANCELED) != 0) {
                 touchpad.setButtonHeld(mouseButton, false);
                 resetTouch();
@@ -409,7 +482,7 @@ public final class DualScreenControlsPresentation extends Presentation {
         public boolean performClick() {
             super.performClick();
             // Accessibility clicks have no down/up touch events, so generate a full tap here.
-            if (!completingTouch && !disposed && isShowing()) touchpad.click(mouseButton);
+            if (!completingTouch && !disposed && !statsVisible && isShowing()) touchpad.click(mouseButton);
             return true;
         }
 

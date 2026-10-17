@@ -1,7 +1,8 @@
 # Moonlight (Grimm)
 
-Current build: **12.2-Grimm.4** (versionCode318), adding optional dual-screen
-controls. This mode is off by default and can be enabled in Input Settings.
+Current build: **12.2.g5** (versionCode319), adding an upper-left **Show stats**
+button on the secondary display. Optional dual-screen controls remain off by
+default and can be enabled in Input Settings.
 
 See [GRIMM-DUAL-SCREEN-TESTING.md](GRIMM-DUAL-SCREEN-TESTING.md) for setup and device
 checks. Earlier touchscreen tab/scroll details are in GRIMM-TOUCH-TESTING.md;
