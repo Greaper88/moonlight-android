@@ -130,6 +130,24 @@
     <PreferenceCategory android:title="@string/category_input_settings"
         android:key="category_input_settings">
         <CheckBoxPreference
+            android:key="checkbox_dual_screen_controls"
+            android:title="@string/title_dual_screen_controls"
+            android:summary="@string/summary_dual_screen_controls"
+            android:defaultValue="false" />
+        <ListPreference
+            android:key="list_dual_screen_control_display"
+            android:dependency="checkbox_dual_screen_controls"
+            android:title="@string/title_dual_screen_control_display"
+            android:summary="%s"
+            android:entries="@array/dual_screen_control_display_entries"
+            android:entryValues="@array/dual_screen_control_display_values"
+            android:defaultValue="auto" />
+        <CheckBoxPreference
+            android:key="checkbox_touch_keyboard_tab"
+            android:title="@string/title_touch_keyboard_tab"
+            android:summary="@string/summary_touch_keyboard_tab"
+            android:defaultValue="false" />
+        <CheckBoxPreference
             android:key="checkbox_touchscreen_trackpad"
             android:title="@string/title_checkbox_touchscreen_trackpad"
             android:summary="@string/summary_checkbox_touchscreen_trackpad"

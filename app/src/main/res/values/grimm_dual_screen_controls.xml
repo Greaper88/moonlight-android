@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="grimm_dual_screen_controls_title">Grimm controls</string>
+    <string name="grimm_dual_screen_touchpad_title">Touchpad</string>
+    <string name="grimm_dual_screen_touchpad_hint">One finger: move · Tap: click\nTwo fingers: scroll · Two-finger tap: right click</string>
+    <string name="grimm_dual_screen_touchpad_description">Mouse touchpad. Move one finger to move the pointer, tap to click, or use two fingers to scroll or right click.</string>
+    <string name="grimm_dual_screen_show_keyboard">Show keyboard</string>
+    <string name="grimm_dual_screen_hide_keyboard">Hide keyboard</string>
+    <string name="grimm_dual_screen_left_click">Left click</string>
+    <string name="grimm_dual_screen_right_click">Right click</string>
+    <string name="grimm_dual_screen_left_click_description">Left mouse button. Hold while moving on the touchpad to drag.</string>
+    <string name="grimm_dual_screen_right_click_description">Right mouse button. Hold while moving on the touchpad to drag.</string>
+</resources>

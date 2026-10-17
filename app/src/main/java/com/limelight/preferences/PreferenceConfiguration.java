@@ -58,6 +58,9 @@ public class PreferenceConfiguration {
     private static final String VIBRATE_FALLBACK_PREF_STRING = "checkbox_vibrate_fallback";
     private static final String VIBRATE_FALLBACK_STRENGTH_PREF_STRING = "seekbar_vibrate_fallback_strength";
     private static final String FLIP_FACE_BUTTONS_PREF_STRING = "checkbox_flip_face_buttons";
+    static final String DUAL_SCREEN_CONTROLS_PREF_STRING = "checkbox_dual_screen_controls";
+    static final String DUAL_SCREEN_DISPLAY_PREF_STRING = "list_dual_screen_control_display";
+    private static final String TOUCH_KEYBOARD_TAB_PREF_STRING = "checkbox_touch_keyboard_tab";
     private static final String TOUCHSCREEN_TRACKPAD_PREF_STRING = "checkbox_touchscreen_trackpad";
     private static final String LATENCY_TOAST_PREF_STRING = "checkbox_enable_post_stream_toast";
     private static final String FRAME_PACING_PREF_STRING = "frame_pacing";
@@ -146,6 +149,9 @@ public class PreferenceConfiguration {
     public boolean vibrateFallbackToDevice;
     public int vibrateFallbackToDeviceStrength;
     public boolean touchscreenTrackpad;
+    public boolean showTouchKeyboardTab;
+    public boolean dualScreenControls;
+    public int dualScreenControlDisplayId = -1;
     public MoonBridge.AudioConfiguration audioConfiguration;
     public int framePacing;
     public boolean absoluteMouseMode;
@@ -592,6 +598,13 @@ public class PreferenceConfiguration {
         config.vibrateFallbackToDevice = prefs.getBoolean(VIBRATE_FALLBACK_PREF_STRING, DEFAULT_VIBRATE_FALLBACK);
         config.vibrateFallbackToDeviceStrength = prefs.getInt(VIBRATE_FALLBACK_STRENGTH_PREF_STRING, DEFAULT_VIBRATE_FALLBACK_STRENGTH);
         config.flipFaceButtons = prefs.getBoolean(FLIP_FACE_BUTTONS_PREF_STRING, DEFAULT_FLIP_FACE_BUTTONS);
+        config.dualScreenControls = prefs.getBoolean(DUAL_SCREEN_CONTROLS_PREF_STRING, false);
+        try {
+            config.dualScreenControlDisplayId = Integer.parseInt(prefs.getString(DUAL_SCREEN_DISPLAY_PREF_STRING, "auto"));
+        } catch (NumberFormatException ignored) {
+            config.dualScreenControlDisplayId = -1;
+        }
+        config.showTouchKeyboardTab = prefs.getBoolean(TOUCH_KEYBOARD_TAB_PREF_STRING, false);
         config.touchscreenTrackpad = prefs.getBoolean(TOUCHSCREEN_TRACKPAD_PREF_STRING, DEFAULT_TOUCHSCREEN_TRACKPAD);
         config.enableLatencyToast = prefs.getBoolean(LATENCY_TOAST_PREF_STRING, DEFAULT_LATENCY_TOAST);
         config.absoluteMouseMode = prefs.getBoolean(ABSOLUTE_MOUSE_MODE_PREF_STRING, DEFAULT_ABSOLUTE_MOUSE_MODE);

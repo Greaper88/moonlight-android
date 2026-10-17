@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="grimm_touch_toolbar_open_controls">Open stream controls</string>
+    <string name="grimm_touch_toolbar_open_controls_keyboard_visible">Open stream controls to hide the keyboard</string>
+    <string name="grimm_touch_toolbar_show_keyboard">Show keyboard</string>
+    <string name="grimm_touch_toolbar_hide_keyboard">Hide keyboard</string>
+    <string name="grimm_touch_toolbar_show_keyboard_description">Show on-screen keyboard</string>
+    <string name="grimm_touch_toolbar_hide_keyboard_description">Hide on-screen keyboard</string>
+    <string name="grimm_touch_toolbar_hide_controls">Hide controls</string>
+    <string name="grimm_touch_toolbar_hide_controls_description">Close stream controls and keep the edge tab</string>
+</resources>

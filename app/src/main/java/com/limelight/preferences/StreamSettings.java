@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.media.MediaCodecInfo;
+import android.hardware.display.DisplayManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.app.Activity;
@@ -36,6 +37,7 @@ import com.limelight.utils.UiHelper;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.ArrayList;
 
 public class StreamSettings extends Activity {
     private PreferenceConfiguration previousPrefs;
@@ -263,6 +265,34 @@ public class StreamSettings extends Activity {
                     .apply();
         }
 
+        private void populateControlDisplays() {
+            ListPreference preference = (ListPreference) findPreference(PreferenceConfiguration.DUAL_SCREEN_DISPLAY_PREF_STRING);
+            ArrayList<CharSequence> labels = new ArrayList<>();
+            ArrayList<CharSequence> values = new ArrayList<>();
+            labels.add(getString(R.string.dual_screen_display_automatic));
+            values.add("auto");
+            DisplayManager manager = (DisplayManager) getActivity().getSystemService(Context.DISPLAY_SERVICE);
+            int currentDisplayId = getActivity().getWindowManager().getDefaultDisplay().getDisplayId();
+            for (Display display : manager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)) {
+                if (display.getDisplayId() == currentDisplayId || !display.isValid() ||
+                        "HiddenDisplay".equals(display.getName()) || "WebRTC_ScreenCapture".equals(display.getName())) {
+                    continue;
+                }
+                DisplayMetrics metrics = new DisplayMetrics();
+                display.getRealMetrics(metrics);
+                labels.add(getString(R.string.dual_screen_display_label,
+                        display.getName(), metrics.widthPixels, metrics.heightPixels));
+                values.add(Integer.toString(display.getDisplayId()));
+            }
+            String selected = preference.getValue();
+            if (selected != null && !values.contains(selected)) {
+                labels.add(getString(R.string.dual_screen_display_unavailable));
+                values.add(selected);
+            }
+            preference.setEntries(labels.toArray(new CharSequence[0]));
+            preference.setEntryValues(values.toArray(new CharSequence[0]));
+        }
+
         @Override
         public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
             View view = super.onCreateView(inflater, container, savedInstanceState);
@@ -275,6 +305,7 @@ public class StreamSettings extends Activity {
             super.onCreate(savedInstanceState);
 
             addPreferencesFromResource(R.xml.preferences);
+            populateControlDisplays();
             PreferenceScreen screen = getPreferenceScreen();
 
             // hide on-screen controls category on non touch screen devices
@@ -282,6 +313,8 @@ public class StreamSettings extends Activity {
                 PreferenceCategory category =
                         (PreferenceCategory) findPreference("category_onscreen_controls");
                 screen.removePreference(category);
+                ((PreferenceCategory) findPreference("category_input_settings"))
+                        .removePreference(findPreference("checkbox_touch_keyboard_tab"));
             }
 
             // Hide remote desktop mouse mode on pre-Oreo (which doesn't have pointer capture)

@@ -30,6 +30,10 @@ import com.limelight.nvstream.jni.MoonBridge;
 import com.limelight.preferences.GlPreferences;
 import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.ui.GameGestures;
+import com.limelight.ui.StreamKeyboard;
+import com.limelight.ui.DualScreenControlsPresentation;
+import com.limelight.ui.SecondaryDisplaySelection;
+import com.limelight.ui.StreamTouchToolbar;
 import com.limelight.ui.StreamView;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.ServerHelper;
@@ -44,6 +48,7 @@ import android.app.PictureInPictureParams;
 import android.app.Service;
 import android.content.ComponentName;
 import android.content.Context;
+import android.hardware.display.DisplayManager;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
@@ -62,6 +67,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.util.Rational;
 import android.view.Display;
+import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
@@ -137,6 +143,22 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private boolean waitingForAllModifiersUp = false;
     private int specialKeyCode = KeyEvent.KEYCODE_UNKNOWN;
     private StreamView streamView;
+    private StreamKeyboard streamKeyboard;
+    private DualScreenControlsPresentation secondaryControls;
+    private DisplayManager dualScreenDisplayManager;
+    private boolean dualScreenDisplayListenerRegistered;
+    private boolean dualScreenActivityResumed;
+    private boolean dualScreenAvailabilityNotified;
+    private int failedControlsDisplayId = SecondaryDisplaySelection.NONE;
+    private final DisplayManager.DisplayListener dualScreenDisplayListener = new DisplayManager.DisplayListener() {
+        @Override public void onDisplayAdded(int id) { refreshDualScreenControls(); }
+        @Override public void onDisplayChanged(int id) { refreshDualScreenControls(); }
+        @Override public void onDisplayRemoved(int id) { refreshDualScreenControls(); }
+    };
+    private StreamTouchToolbar touchKeyboardToolbar;
+    private volatile boolean streamKeyboardVisible;
+    private int streamKeyboardKeyCode = KeyEvent.KEYCODE_UNKNOWN;
+    private int streamKeyboardModifiersHeld;
     private long lastAbsTouchUpTime = 0;
     private long lastAbsTouchDownTime = 0;
     private float lastAbsTouchUpX, lastAbsTouchUpY;
@@ -590,6 +612,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (isInPictureInPictureMode()) {
                 isHidingOverlays = true;
+                hideStreamKeyboard(false);
+                dismissDualScreenControls();
+                hideTouchKeyboardToolbar();
+                controllerHandler.onKeyboardVisibilityChanged();
 
                 if (virtualController != null) {
                     virtualController.hide();
@@ -606,6 +632,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
             else {
                 isHidingOverlays = false;
+                setupDualScreenDisplays();
+                updateTouchKeyboardToolbar();
 
                 // Restore overlays to previous state when leaving PiP
 
@@ -749,6 +777,29 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         // With Android native pointer capture, capture is lost when focus is lost,
         // so it must be requested again when focus is regained.
         inputCaptureProvider.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            setupDualScreenDisplays();
+            updateTouchKeyboardToolbar();
+        }
+        else {
+            hideStreamKeyboard(false);
+            dismissDualScreenControls();
+            hideTouchKeyboardToolbar();
+            if (controllerHandler != null) {
+                controllerHandler.onKeyboardVisibilityChanged();
+            }
+        }
+        if (hasFocus && streamKeyboardVisible) {
+            inputCaptureProvider.disableCapture();
+        }
+        else if (hasFocus && connected && grabbedInput && !isFinishing() &&
+                !inputCaptureProvider.isCapturingEnabled()) {
+            // The overlay may have been closed by onPause() while a transient system UI was shown.
+            inputCaptureProvider.enableCapture();
+            if (cursorVisible) {
+                inputCaptureProvider.showCursor();
+            }
+        }
     }
 
     private boolean isRefreshRateEqualMatch(float refreshRate) {
@@ -1034,6 +1085,15 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     protected void onDestroy() {
+        hideStreamKeyboard(false);
+        dismissDualScreenControls();
+        if (dualScreenDisplayListenerRegistered) {
+            dualScreenDisplayManager.unregisterDisplayListener(dualScreenDisplayListener);
+            dualScreenDisplayListenerRegistered = false;
+        }
+        if (touchKeyboardToolbar != null) {
+            touchKeyboardToolbar.dispose();
+        }
         super.onDestroy();
 
         if (controllerHandler != null) {
@@ -1061,7 +1121,22 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        dualScreenActivityResumed = true;
+        failedControlsDisplayId = SecondaryDisplaySelection.NONE;
+        setupDualScreenDisplays();
+    }
+
+    @Override
     protected void onPause() {
+        dualScreenActivityResumed = false;
+        hideStreamKeyboard(false);
+        dismissDualScreenControls();
+        hideTouchKeyboardToolbar();
+        if (controllerHandler != null) {
+            controllerHandler.onKeyboardVisibilityChanged();
+        }
         if (isFinishing()) {
             // Stop any further input device notifications before we lose focus (and pointer capture)
             if (controllerHandler != null) {
@@ -1077,6 +1152,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     protected void onStop() {
+        hideStreamKeyboard(false);
+        dismissDualScreenControls();
+        hideTouchKeyboardToolbar();
         super.onStop();
 
         SpinnerDialog.closeDialogs(this);
@@ -1497,11 +1575,319 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         }
     }
 
+    private StreamKeyboard getActiveStreamKeyboard() {
+        if (secondaryControls != null && secondaryControls.getKeyboard() != null) {
+            return secondaryControls.getKeyboard();
+        }
+        return streamKeyboard;
+    }
+
+    private void setupDualScreenDisplays() {
+        if (prefConfig == null || !prefConfig.dualScreenControls) {
+            return;
+        }
+        if (dualScreenDisplayManager == null) {
+            dualScreenDisplayManager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+        }
+        if (!dualScreenDisplayListenerRegistered) {
+            dualScreenDisplayManager.registerDisplayListener(dualScreenDisplayListener,
+                    new Handler(android.os.Looper.getMainLooper()));
+            dualScreenDisplayListenerRegistered = true;
+        }
+        updateDualScreenControls();
+    }
+
+    private void refreshDualScreenControls() {
+        failedControlsDisplayId = SecondaryDisplaySelection.NONE;
+        updateDualScreenControls();
+    }
+
+    private void showDualScreenUnavailable() {
+        if (!dualScreenAvailabilityNotified) {
+            android.widget.Toast.makeText(this, R.string.dual_screen_controls_unavailable,
+                    android.widget.Toast.LENGTH_SHORT).show();
+            dualScreenAvailabilityNotified = true;
+        }
+    }
+
+    private void updateDualScreenControls() {
+        if (prefConfig == null || !prefConfig.dualScreenControls || !connected ||
+                !dualScreenActivityResumed || isHidingOverlays || !hasWindowFocus() ||
+                dualScreenDisplayManager == null || isFinishing()) {
+            dismissDualScreenControls();
+            return;
+        }
+        Display[] displays = dualScreenDisplayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
+        SecondaryDisplaySelection.Candidate[] candidates = new SecondaryDisplaySelection.Candidate[displays.length];
+        for (int i = 0; i < displays.length; i++) {
+            Display display = displays[i];
+            candidates[i] = new SecondaryDisplaySelection.Candidate(display.getDisplayId(), display.getName(),
+                    display.isValid(), display.getState() != Display.STATE_OFF,
+                    (display.getFlags() & Display.FLAG_PRESENTATION) != 0);
+        }
+        int selectedId = SecondaryDisplaySelection.choose(getWindowManager().getDefaultDisplay().getDisplayId(),
+                prefConfig.dualScreenControlDisplayId, candidates);
+        if (secondaryControls != null && secondaryControls.isShowing() &&
+                secondaryControls.getDisplay().getDisplayId() == selectedId) {
+            return;
+        }
+        if (selectedId == SecondaryDisplaySelection.NONE || selectedId == failedControlsDisplayId) {
+            boolean restoreKeyboard = secondaryControls != null && streamKeyboardVisible;
+            dismissDualScreenControls();
+            showDualScreenUnavailable();
+            if (restoreKeyboard) {
+                toggleKeyboard();
+            }
+            return;
+        }
+
+        boolean restoreKeyboard = streamKeyboardVisible;
+        hideStreamKeyboard(false);
+        dismissDualScreenControls();
+        Display target = dualScreenDisplayManager.getDisplay(selectedId);
+        if (target == null || !target.isValid()) {
+            showDualScreenUnavailable();
+            if (restoreKeyboard) toggleKeyboard();
+            return;
+        }
+        DualScreenControlsPresentation presentation = new DualScreenControlsPresentation(this, target, conn, prefConfig,
+                new StreamKeyboard.Listener() {
+                    @Override public void onKeyActivated(int keyCode, int modifiers) {
+                        sendStreamKeyboardKey(keyCode, modifiers);
+                    }
+                    @Override public void onCloseRequested() { hideStreamKeyboard(true); }
+                }, this::toggleKeyboard);
+        presentation.setOnDismissListener(dialog -> {
+            if (secondaryControls == presentation) {
+                boolean wasKeyboardVisible = streamKeyboardVisible;
+                hideStreamKeyboard(false);
+                presentation.cancelInput();
+                secondaryControls = null;
+                if (wasKeyboardVisible && connected && dualScreenActivityResumed && hasWindowFocus()) {
+                    toggleKeyboard();
+                }
+            }
+        });
+        secondaryControls = presentation;
+        try {
+            presentation.show();
+            dualScreenAvailabilityNotified = false;
+        } catch (WindowManager.InvalidDisplayException | WindowManager.BadTokenException | SecurityException e) {
+            LimeLog.warning("Unable to show second-screen controls: " + e);
+            secondaryControls = null;
+            presentation.dispose();
+            failedControlsDisplayId = selectedId;
+            showDualScreenUnavailable();
+        }
+        if (restoreKeyboard) toggleKeyboard();
+    }
+
+    private void dismissDualScreenControls() {
+        DualScreenControlsPresentation presentation = secondaryControls;
+        if (presentation != null) {
+            hideStreamKeyboard(false);
+            secondaryControls = null;
+            presentation.dispose();
+        }
+    }
+
+    private void updateTouchKeyboardToolbar() {
+        if (prefConfig == null || !prefConfig.showTouchKeyboardTab || !connected || isHidingOverlays) {
+            hideTouchKeyboardToolbar();
+            return;
+        }
+        if (touchKeyboardToolbar == null) {
+            touchKeyboardToolbar = new StreamTouchToolbar(this, this::toggleKeyboard);
+            FrameLayout.LayoutParams layout = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.LEFT | Gravity.CENTER_VERTICAL);
+            ((FrameLayout) streamView.getParent()).addView(touchKeyboardToolbar, layout);
+            touchKeyboardToolbar.setOnApplyWindowInsetsListener((view, insets) -> {
+                int safeLeft = insets.getSystemWindowInsetLeft();
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && insets.getDisplayCutout() != null) {
+                    safeLeft = Math.max(safeLeft, insets.getDisplayCutout().getSafeInsetLeft());
+                }
+                FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) view.getLayoutParams();
+                if (params.leftMargin != safeLeft) {
+                    params.leftMargin = safeLeft;
+                    view.setLayoutParams(params);
+                }
+                return insets;
+            });
+            touchKeyboardToolbar.requestApplyInsets();
+        }
+        touchKeyboardToolbar.setKeyboardVisible(streamKeyboardVisible);
+        touchKeyboardToolbar.setVisibility(View.VISIBLE);
+        touchKeyboardToolbar.bringToFront();
+    }
+
+    private void hideTouchKeyboardToolbar() {
+        if (touchKeyboardToolbar != null) {
+            touchKeyboardToolbar.collapse();
+            touchKeyboardToolbar.setVisibility(View.GONE);
+        }
+    }
+
     @Override
     public void toggleKeyboard() {
-        LimeLog.info("Toggling keyboard overlay");
-        InputMethodManager inputManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-        inputManager.toggleSoftInput(0, 0);
+        runOnUiThread(() -> {
+            if (streamKeyboardVisible) {
+                hideStreamKeyboard(true);
+                return;
+            }
+            if (!connected || isFinishing()) {
+                return;
+            }
+
+            if (secondaryControls == null && streamKeyboard == null) {
+                streamKeyboard = new StreamKeyboard(this, new StreamKeyboard.Listener() {
+                    @Override
+                    public void onKeyActivated(int keyCode, int modifiers) {
+                        sendStreamKeyboardKey(keyCode, modifiers);
+                    }
+
+                    @Override
+                    public void onCloseRequested() {
+                        hideStreamKeyboard(true);
+                    }
+                });
+                streamKeyboard.setVisibility(View.GONE);
+                FrameLayout.LayoutParams layout = new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                        Gravity.BOTTOM);
+                ((FrameLayout) streamView.getParent()).addView(streamKeyboard, layout);
+            }
+
+            // This keyboard shares the streaming window so Android keyboard capture stays active.
+            // Release pointer capture so a physical mouse can also click its keys.
+            inputCaptureProvider.disableCapture();
+            InputMethodManager inputManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            inputManager.hideSoftInputFromWindow(streamView.getWindowToken(), 0);
+            StreamKeyboard activeKeyboard = getActiveStreamKeyboard();
+            activeKeyboard.resetInput();
+            streamKeyboardVisible = true;
+            if (secondaryControls != null) {
+                secondaryControls.setKeyboardVisible(true);
+            }
+            else {
+                streamKeyboard.setVisibility(View.VISIBLE);
+                streamKeyboard.bringToFront();
+            }
+            updateTouchKeyboardToolbar();
+            streamView.requestFocus();
+            controllerHandler.onKeyboardVisibilityChanged();
+        });
+    }
+
+    @Override
+    public boolean isKeyboardVisible() {
+        return streamKeyboardVisible;
+    }
+
+    @Override
+    public void handleKeyboardControllerInput(int buttonFlags) {
+        runOnUiThread(() -> {
+            StreamKeyboard activeKeyboard = getActiveStreamKeyboard();
+            if (streamKeyboardVisible && activeKeyboard != null) {
+                activeKeyboard.handleControllerInput(buttonFlags);
+            }
+        });
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (streamKeyboardVisible) {
+            hideStreamKeyboard(true);
+        }
+        else {
+            super.onBackPressed();
+        }
+    }
+
+    private void hideStreamKeyboard(boolean restorePointerCapture) {
+        releaseStreamKeyboardKeys();
+        if (!streamKeyboardVisible) {
+            return;
+        }
+        streamKeyboardVisible = false;
+        StreamKeyboard activeKeyboard = getActiveStreamKeyboard();
+        if (activeKeyboard != null) {
+            activeKeyboard.resetInput();
+            activeKeyboard.setVisibility(View.GONE);
+        }
+        if (secondaryControls != null) {
+            secondaryControls.setKeyboardVisible(false);
+        }
+        if (touchKeyboardToolbar != null) {
+            touchKeyboardToolbar.setKeyboardVisible(false);
+        }
+        if (controllerHandler != null) {
+            controllerHandler.onKeyboardVisibilityChanged();
+        }
+        if (restorePointerCapture && grabbedInput && connected && !isFinishing()) {
+            inputCaptureProvider.enableCapture();
+            if (cursorVisible) {
+                inputCaptureProvider.showCursor();
+            }
+        }
+        streamView.requestFocus();
+    }
+
+    private void sendStreamKeyboardKey(int keyCode, int modifiers) {
+        if (!connected || !streamKeyboardVisible) {
+            return;
+        }
+
+        // Modifier toggles apply only to this chord; never leave a modifier held on the host.
+        // Physical keyboard modifiers are already down and must not be released by the overlay.
+        int modifiersToPress = modifiers & ~modifierFlags;
+        int[] modifierMasks = {KeyboardPacket.MODIFIER_CTRL, KeyboardPacket.MODIFIER_ALT,
+                KeyboardPacket.MODIFIER_SHIFT};
+        int[] modifierKeys = {KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_ALT_LEFT,
+                KeyEvent.KEYCODE_SHIFT_LEFT};
+        try {
+            for (int i = 0; i < modifierMasks.length; i++) {
+                if ((modifiersToPress & modifierMasks[i]) != 0) {
+                    streamKeyboardModifiersHeld |= modifierMasks[i];
+                    conn.sendKeyboardInput(keyboardTranslator.translate(modifierKeys[i], -1), KeyboardPacket.KEY_DOWN,
+                            (byte) (modifierFlags | streamKeyboardModifiersHeld), (byte) 0);
+                }
+            }
+            streamKeyboardKeyCode = keyCode;
+            conn.sendKeyboardInput(keyboardTranslator.translate(keyCode, -1), KeyboardPacket.KEY_DOWN,
+                    (byte) (modifierFlags | streamKeyboardModifiersHeld), (byte) 0);
+        }
+        finally {
+            releaseStreamKeyboardKeys();
+        }
+    }
+
+    private void releaseStreamKeyboardKeys() {
+        if (conn == null || keyboardTranslator == null) {
+            streamKeyboardKeyCode = KeyEvent.KEYCODE_UNKNOWN;
+            streamKeyboardModifiersHeld = 0;
+            return;
+        }
+        try {
+            if (streamKeyboardKeyCode != KeyEvent.KEYCODE_UNKNOWN) {
+                conn.sendKeyboardInput(keyboardTranslator.translate(streamKeyboardKeyCode, -1), KeyboardPacket.KEY_UP,
+                        (byte) (modifierFlags | streamKeyboardModifiersHeld), (byte) 0);
+            }
+        }
+        finally {
+            streamKeyboardKeyCode = KeyEvent.KEYCODE_UNKNOWN;
+            int[] modifierMasks = {KeyboardPacket.MODIFIER_SHIFT, KeyboardPacket.MODIFIER_ALT,
+                    KeyboardPacket.MODIFIER_CTRL};
+            int[] modifierKeys = {KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_ALT_LEFT,
+                    KeyEvent.KEYCODE_CTRL_LEFT};
+            for (int i = 0; i < modifierMasks.length; i++) {
+                if ((streamKeyboardModifiersHeld & modifierMasks[i]) != 0) {
+                    streamKeyboardModifiersHeld &= ~modifierMasks[i];
+                    conn.sendKeyboardInput(keyboardTranslator.translate(modifierKeys[i], -1), KeyboardPacket.KEY_UP,
+                            (byte) (modifierFlags | streamKeyboardModifiersHeld), (byte) 0);
+                }
+            }
+        }
     }
 
     private byte getLiTouchTypeFromEvent(MotionEvent event) {
@@ -2228,6 +2614,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private void stopConnection() {
         if (connecting || connected) {
             connecting = connected = false;
+            dismissDualScreenControls();
+            hideTouchKeyboardToolbar();
             updatePipAutoEnter();
 
             controllerHandler.stop();
@@ -2413,6 +2801,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
                 connected = true;
                 connecting = false;
+                dualScreenAvailabilityNotified = false;
+                setupDualScreenDisplays();
+                updateTouchKeyboardToolbar();
                 updatePipAutoEnter();
 
                 // Hide the mouse cursor now after a short delay.

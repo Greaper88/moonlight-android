@@ -22,6 +22,7 @@ import android.os.CombinedVibration;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.os.VibrationAttributes;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
@@ -242,6 +243,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             releaseControllerNumber(context);
             context.destroy();
             inputDeviceContexts.remove(deviceId);
+            if (gestures.isKeyboardVisible()) {
+                gestures.handleKeyboardControllerInput(getKeyboardInputMap());
+            }
         }
     }
 
@@ -266,6 +270,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         InputDeviceContext newContext = createInputDeviceContextForDevice(device);
         newContext.migrateContext(existingContext);
         inputDeviceContexts.put(deviceId, newContext);
+        if (gestures.isKeyboardVisible()) {
+            gestures.handleKeyboardControllerInput(getKeyboardInputMap());
+        }
     }
 
     public void stop() {
@@ -289,6 +296,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             deviceContext.destroy();
         }
 
+        defaultContext.destroy();
         deviceVibrator.cancel();
     }
 
@@ -1206,6 +1214,10 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     }
 
     private void sendControllerInputPacket(GenericControllerContext originalContext) {
+        if (stopped || originalContext.destroyed) {
+            return;
+        }
+        originalContext.updateSelectShortcut();
         assignControllerNumberIfNeeded(originalContext);
 
         // Take the context's controller number and fuse all inputs with the same number
@@ -1226,13 +1238,13 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             if (context.assignedControllerNumber &&
                     context.controllerNumber == controllerNumber &&
                     context.mouseEmulationActive == originalContext.mouseEmulationActive) {
-                inputMap |= context.inputMap;
-                leftTrigger |= maxByMagnitude(leftTrigger, context.leftTrigger);
-                rightTrigger |= maxByMagnitude(rightTrigger, context.rightTrigger);
-                leftStickX |= maxByMagnitude(leftStickX, context.leftStickX);
-                leftStickY |= maxByMagnitude(leftStickY, context.leftStickY);
-                rightStickX |= maxByMagnitude(rightStickX, context.rightStickX);
-                rightStickY |= maxByMagnitude(rightStickY, context.rightStickY);
+                inputMap |= context.forwardedInputMap();
+                leftTrigger |= maxByMagnitude(leftTrigger, context.suppressAnalogUntilNeutral ? 0 : context.leftTrigger);
+                rightTrigger |= maxByMagnitude(rightTrigger, context.suppressAnalogUntilNeutral ? 0 : context.rightTrigger);
+                leftStickX |= maxByMagnitude(leftStickX, context.suppressAnalogUntilNeutral ? 0 : context.leftStickX);
+                leftStickY |= maxByMagnitude(leftStickY, context.suppressAnalogUntilNeutral ? 0 : context.leftStickY);
+                rightStickX |= maxByMagnitude(rightStickX, context.suppressAnalogUntilNeutral ? 0 : context.rightStickX);
+                rightStickY |= maxByMagnitude(rightStickY, context.suppressAnalogUntilNeutral ? 0 : context.rightStickY);
             }
         }
         for (int i = 0; i < usbDeviceContexts.size(); i++) {
@@ -1240,26 +1252,34 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             if (context.assignedControllerNumber &&
                     context.controllerNumber == controllerNumber &&
                     context.mouseEmulationActive == originalContext.mouseEmulationActive) {
-                inputMap |= context.inputMap;
-                leftTrigger |= maxByMagnitude(leftTrigger, context.leftTrigger);
-                rightTrigger |= maxByMagnitude(rightTrigger, context.rightTrigger);
-                leftStickX |= maxByMagnitude(leftStickX, context.leftStickX);
-                leftStickY |= maxByMagnitude(leftStickY, context.leftStickY);
-                rightStickX |= maxByMagnitude(rightStickX, context.rightStickX);
-                rightStickY |= maxByMagnitude(rightStickY, context.rightStickY);
+                inputMap |= context.forwardedInputMap();
+                leftTrigger |= maxByMagnitude(leftTrigger, context.suppressAnalogUntilNeutral ? 0 : context.leftTrigger);
+                rightTrigger |= maxByMagnitude(rightTrigger, context.suppressAnalogUntilNeutral ? 0 : context.rightTrigger);
+                leftStickX |= maxByMagnitude(leftStickX, context.suppressAnalogUntilNeutral ? 0 : context.leftStickX);
+                leftStickY |= maxByMagnitude(leftStickY, context.suppressAnalogUntilNeutral ? 0 : context.leftStickY);
+                rightStickX |= maxByMagnitude(rightStickX, context.suppressAnalogUntilNeutral ? 0 : context.rightStickX);
+                rightStickY |= maxByMagnitude(rightStickY, context.suppressAnalogUntilNeutral ? 0 : context.rightStickY);
             }
         }
         if (defaultContext.controllerNumber == controllerNumber) {
-            inputMap |= defaultContext.inputMap;
-            leftTrigger |= maxByMagnitude(leftTrigger, defaultContext.leftTrigger);
-            rightTrigger |= maxByMagnitude(rightTrigger, defaultContext.rightTrigger);
-            leftStickX |= maxByMagnitude(leftStickX, defaultContext.leftStickX);
-            leftStickY |= maxByMagnitude(leftStickY, defaultContext.leftStickY);
-            rightStickX |= maxByMagnitude(rightStickX, defaultContext.rightStickX);
-            rightStickY |= maxByMagnitude(rightStickY, defaultContext.rightStickY);
+            inputMap |= defaultContext.forwardedInputMap();
+            leftTrigger |= maxByMagnitude(leftTrigger, defaultContext.suppressAnalogUntilNeutral ? 0 : defaultContext.leftTrigger);
+            rightTrigger |= maxByMagnitude(rightTrigger, defaultContext.suppressAnalogUntilNeutral ? 0 : defaultContext.rightTrigger);
+            leftStickX |= maxByMagnitude(leftStickX, defaultContext.suppressAnalogUntilNeutral ? 0 : defaultContext.leftStickX);
+            leftStickY |= maxByMagnitude(leftStickY, defaultContext.suppressAnalogUntilNeutral ? 0 : defaultContext.leftStickY);
+            rightStickX |= maxByMagnitude(rightStickX, defaultContext.suppressAnalogUntilNeutral ? 0 : defaultContext.rightStickX);
+            rightStickY |= maxByMagnitude(rightStickY, defaultContext.suppressAnalogUntilNeutral ? 0 : defaultContext.rightStickY);
+        }
+
+        if (gestures.isKeyboardVisible()) {
+            gestures.handleKeyboardControllerInput(getKeyboardInputMap());
+            conn.sendControllerInput(controllerNumber, getActiveControllerMask(),
+                    0, (byte)0, (byte)0, (short)0, (short)0, (short)0, (short)0);
+            return;
         }
 
         if (originalContext.mouseEmulationActive) {
+            originalContext.mouseEmulationDirectionalMap = inputMap;
             int changedMask = inputMap ^  originalContext.mouseEmulationLastInputMap;
 
             boolean aDown = (inputMap & ControllerPacket.A_FLAG) != 0;
@@ -1283,26 +1303,11 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                     conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_RIGHT);
                 }
             }
-            if ((changedMask & ControllerPacket.UP_FLAG) != 0) {
-                if ((inputMap & ControllerPacket.UP_FLAG) != 0) {
-                    conn.sendMouseScroll((byte) 1);
-                }
-            }
-            if ((changedMask & ControllerPacket.DOWN_FLAG) != 0) {
-                if ((inputMap & ControllerPacket.DOWN_FLAG) != 0) {
-                    conn.sendMouseScroll((byte) -1);
-                }
-            }
-            if ((changedMask & ControllerPacket.RIGHT_FLAG) != 0) {
-                if ((inputMap & ControllerPacket.RIGHT_FLAG) != 0) {
-                    conn.sendMouseHScroll((byte) 1);
-                }
-            }
-            if ((changedMask & ControllerPacket.LEFT_FLAG) != 0) {
-                if ((inputMap & ControllerPacket.LEFT_FLAG) != 0) {
-                    conn.sendMouseHScroll((byte) -1);
-                }
-            }
+            originalContext.mouseScrollUp = (inputMap & ControllerPacket.LB_FLAG) != 0 ||
+                    HeldMouseScroll.isTriggerPressed(leftTrigger);
+            originalContext.mouseScrollDown = (inputMap & ControllerPacket.RB_FLAG) != 0 ||
+                    HeldMouseScroll.isTriggerPressed(rightTrigger);
+            originalContext.sendHeldMouseScroll(SystemClock.uptimeMillis());
 
             conn.sendControllerInput(controllerNumber, getActiveControllerMask(),
                     (short)0, (byte)0, (byte)0, (short)0, (short)0, (short)0, (short)0);
@@ -1314,6 +1319,27 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                     leftStickX, leftStickY,
                     rightStickX, rightStickY);
         }
+    }
+
+    private int getKeyboardInputMap() {
+        int buttons = defaultContext.forwardedInputMap();
+        for (int i = 0; i < inputDeviceContexts.size(); i++) {
+            buttons |= inputDeviceContexts.valueAt(i).forwardedInputMap();
+        }
+        for (int i = 0; i < usbDeviceContexts.size(); i++) {
+            buttons |= usbDeviceContexts.valueAt(i).forwardedInputMap();
+        }
+        return buttons;
+    }
+
+    public void onKeyboardVisibilityChanged() {
+        for (int i = 0; i < inputDeviceContexts.size(); i++) {
+            inputDeviceContexts.valueAt(i).onKeyboardVisibilityChanged();
+        }
+        for (int i = 0; i < usbDeviceContexts.size(); i++) {
+            usbDeviceContexts.valueAt(i).onKeyboardVisibilityChanged();
+        }
+        defaultContext.onKeyboardVisibilityChanged();
     }
 
     private final int REMAP_IGNORE = -1;
@@ -2375,6 +2401,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             break;
         case KeyEvent.KEYCODE_BACK:
         case KeyEvent.KEYCODE_BUTTON_SELECT:
+            if ((event.getFlags() & KeyEvent.FLAG_CANCELED) != 0) {
+                context.cancelSelectShortcut();
+            }
             context.inputMap &= ~ControllerPacket.BACK_FLAG;
             break;
         case KeyEvent.KEYCODE_DPAD_LEFT:
@@ -2807,6 +2836,16 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                                       float leftStickX, float leftStickY,
                                       float rightStickX, float rightStickY,
                                       float leftTrigger, float rightTrigger) {
+        if (Looper.myLooper() != mainThreadHandler.getLooper()) {
+            final float queuedLeftTrigger = leftTrigger;
+            final float queuedRightTrigger = rightTrigger;
+            mainThreadHandler.post(() -> reportControllerState(controllerId, buttonFlags,
+                    leftStickX, leftStickY, rightStickX, rightStickY, queuedLeftTrigger, queuedRightTrigger));
+            return;
+        }
+        if (stopped) {
+            return;
+        }
         GenericControllerContext context = usbDeviceContexts.get(controllerId);
         if (context == null) {
             return;
@@ -2843,17 +2882,28 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
     @Override
     public void deviceRemoved(AbstractController controller) {
+        if (Looper.myLooper() != mainThreadHandler.getLooper()) {
+            mainThreadHandler.post(() -> deviceRemoved(controller));
+            return;
+        }
         UsbDeviceContext context = usbDeviceContexts.get(controller.getControllerId());
         if (context != null) {
             LimeLog.info("Removed controller: "+controller.getControllerId());
             releaseControllerNumber(context);
             context.destroy();
             usbDeviceContexts.remove(controller.getControllerId());
+            if (gestures.isKeyboardVisible()) {
+                gestures.handleKeyboardControllerInput(getKeyboardInputMap());
+            }
         }
     }
 
     @Override
     public void deviceAdded(AbstractController controller) {
+        if (Looper.myLooper() != mainThreadHandler.getLooper()) {
+            mainThreadHandler.post(() -> deviceAdded(controller));
+            return;
+        }
         if (stopped) {
             return;
         }
@@ -2885,6 +2935,99 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         public short leftStickX = 0x0000;
         public short leftStickY = 0x0000;
 
+        public boolean destroyed;
+        public int suppressedButtonsUntilRelease;
+        public boolean suppressAnalogUntilNeutral;
+        void cancelSelectShortcut() {
+            selectShortcut.reset();
+            selectForwardedMap = 0;
+            mainThreadHandler.removeCallbacks(selectShortcutRunnable);
+        }
+
+        private int selectForwardedMap;
+        private final SelectShortcutState selectShortcut = new SelectShortcutState();
+        private final DpadMouseMotion dpadMouse = new DpadMouseMotion();
+        private final HeldMouseScroll heldMouseScroll = new HeldMouseScroll();
+        private int mouseEmulationDirectionalMap;
+        private boolean mouseScrollUp;
+        private boolean mouseScrollDown;
+
+        private final Runnable selectShortcutRunnable = () -> {
+            if (!stopped && !destroyed) {
+                sendControllerInputPacket(this);
+            }
+        };
+
+        private void updateSelectShortcut() {
+            mainThreadHandler.removeCallbacks(selectShortcutRunnable);
+            if (this instanceof InputDeviceContext && !((InputDeviceContext)this).hasSelect) {
+                selectShortcut.reset();
+                selectForwardedMap = inputMap;
+                return;
+            }
+            long now = SystemClock.uptimeMillis();
+            selectForwardedMap = selectShortcut.update(inputMap, now);
+            if (selectShortcut.takeToggleRequest()) {
+                gestures.toggleKeyboard();
+            }
+            long deadline = selectShortcut.nextDeadline();
+            if (deadline > now) {
+                mainThreadHandler.postAtTime(selectShortcutRunnable, deadline);
+            }
+        }
+
+        int forwardedInputMap() {
+            suppressedButtonsUntilRelease &= inputMap;
+            if (!hasAnalogInput()) {
+                suppressAnalogUntilNeutral = false;
+            }
+            // Other contexts in a fused device may have changed since their last report.
+            return ((inputMap & ~ControllerPacket.BACK_FLAG) |
+                    (selectForwardedMap & ControllerPacket.BACK_FLAG)) & ~suppressedButtonsUntilRelease;
+        }
+
+        private boolean hasAnalogInput() {
+            return leftTrigger != 0 || rightTrigger != 0 || leftStickX != 0 || leftStickY != 0 ||
+                    rightStickX != 0 || rightStickY != 0;
+        }
+
+        private void releaseEmulatedMouseButtons() {
+            if ((mouseEmulationLastInputMap & ControllerPacket.A_FLAG) != 0) {
+                conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT);
+            }
+            if ((mouseEmulationLastInputMap & ControllerPacket.B_FLAG) != 0) {
+                conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_RIGHT);
+            }
+            mouseEmulationLastInputMap = mouseEmulationDirectionalMap = 0;
+            dpadMouse.reset();
+            resetHeldMouseScroll();
+        }
+
+        private void resetHeldMouseScroll() {
+            mouseScrollUp = mouseScrollDown = false;
+            heldMouseScroll.reset();
+        }
+
+        private void sendHeldMouseScroll(long now) {
+            byte lines = heldMouseScroll.update(mouseScrollUp, mouseScrollDown, now);
+            if (lines != 0) {
+                conn.sendMouseScroll(lines);
+            }
+        }
+
+        void onKeyboardVisibilityChanged() {
+            selectShortcut.suppressUntilRelease();
+            selectForwardedMap &= ~ControllerPacket.BACK_FLAG;
+            mainThreadHandler.removeCallbacks(selectShortcutRunnable);
+            suppressedButtonsUntilRelease |= inputMap;
+            suppressAnalogUntilNeutral = hasAnalogInput();
+            releaseEmulatedMouseButtons();
+            if (assignedControllerNumber && !stopped) {
+                conn.sendControllerInput(controllerNumber, getActiveControllerMask(),
+                        0, (byte)0, (byte)0, (short)0, (short)0, (short)0, (short)0);
+            }
+        }
+
         public boolean mouseEmulationActive;
         public int mouseEmulationLastInputMap;
         public final int mouseEmulationReportPeriod = 50;
@@ -2892,22 +3035,34 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         public final Runnable mouseEmulationRunnable = new Runnable() {
             @Override
             public void run() {
-                if (!mouseEmulationActive) {
+                if (!mouseEmulationActive || stopped || destroyed) {
                     return;
                 }
+                if (gestures.isKeyboardVisible()) {
+                    resetHeldMouseScroll();
+                    mainThreadHandler.postDelayed(this, mouseEmulationReportPeriod);
+                    return;
+                }
+                sendHeldMouseScroll(SystemClock.uptimeMillis());
+                dpadMouse.update(mouseEmulationDirectionalMap, SystemClock.uptimeMillis());
+                if (dpadMouse.getX() != 0 || dpadMouse.getY() != 0) {
+                    conn.sendMouseMove(dpadMouse.getX(), dpadMouse.getY());
+                }
 
-                // Send mouse events from analog sticks
-                if (prefConfig.analogStickForScrolling == PreferenceConfiguration.AnalogStickForScrolling.RIGHT) {
-                    sendEmulatedMouseMove(leftStickX, leftStickY);
-                    sendEmulatedMouseScroll(rightStickX, rightStickY);
-                }
-                else if (prefConfig.analogStickForScrolling == PreferenceConfiguration.AnalogStickForScrolling.LEFT) {
-                    sendEmulatedMouseMove(rightStickX, rightStickY);
-                    sendEmulatedMouseScroll(leftStickX, leftStickY);
-                }
-                else {
-                    sendEmulatedMouseMove(leftStickX, leftStickY);
-                    sendEmulatedMouseMove(rightStickX, rightStickY);
+                if (!suppressAnalogUntilNeutral) {
+                    // Send mouse events from analog sticks
+                    if (prefConfig.analogStickForScrolling == PreferenceConfiguration.AnalogStickForScrolling.RIGHT) {
+                        sendEmulatedMouseMove(leftStickX, leftStickY);
+                        sendEmulatedMouseScroll(rightStickX, rightStickY);
+                    }
+                    else if (prefConfig.analogStickForScrolling == PreferenceConfiguration.AnalogStickForScrolling.LEFT) {
+                        sendEmulatedMouseMove(rightStickX, rightStickY);
+                        sendEmulatedMouseScroll(leftStickX, leftStickY);
+                    }
+                    else {
+                        sendEmulatedMouseMove(leftStickX, leftStickY);
+                        sendEmulatedMouseMove(rightStickX, rightStickY);
+                    }
                 }
 
                 // Requeue the callback
@@ -2917,6 +3072,10 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
         public void toggleMouseEmulation() {
             mainThreadHandler.removeCallbacks(mouseEmulationRunnable);
+            releaseEmulatedMouseButtons();
+            // Releasing a held control must not restart scrolling across mode changes.
+            suppressedButtonsUntilRelease |= inputMap & (ControllerPacket.LB_FLAG | ControllerPacket.RB_FLAG);
+            suppressAnalogUntilNeutral = hasAnalogInput();
             mouseEmulationActive = !mouseEmulationActive;
             Toast.makeText(activityContext, "Mouse emulation is: " + (mouseEmulationActive ? "ON" : "OFF"), Toast.LENGTH_SHORT).show();
 
@@ -2926,6 +3085,10 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         }
 
         public void destroy() {
+            destroyed = true;
+            selectShortcut.reset();
+            mainThreadHandler.removeCallbacks(selectShortcutRunnable);
+            releaseEmulatedMouseButtons();
             mouseEmulationActive = false;
             mainThreadHandler.removeCallbacks(mouseEmulationRunnable);
         }

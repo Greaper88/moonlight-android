@@ -1,4 +1,23 @@
-# Moonlight Android
+# Moonlight (Grimm)
+
+A personal fork of [Moonlight for Android](https://github.com/moonlight-stream/moonlight-android), based on v12.2, with an on-screen keyboard (OSK), optional dual-screen controls, and shared-IP fixes for use with [Greaper88's Wolf fork](https://github.com/Greaper88/wolf).
+
+- **OSK:** touch and controller support, hold Select to toggle, and an optional touchscreen edge tab.
+- **Dual-screen devices:** keep the stream on one display and use another as a touchpad and keyboard. Enable **Settings > Input Settings > Use second screen for controls**, then choose the **Controls screen**. This is **off by default**, including when connecting DeX.
+- **Controller mouse controls:** D-pad movement and accelerated scrolling when holding the triggers or shoulder buttons in mouse mode.
+- **Low-bitrate shared-IP fix:** preserve the RTSP host identifier used by the Wolf fork to distinguish clients behind the same public IP.
+
+Download the APK from [Grimm releases](https://github.com/Greaper88/moonlight-android/releases).
+
+Grimm uses package `com.limelight.sharedip`. Install new Grimm releases over an existing Grimm installation to retain pairings and settings. The upstream Play Store app is a separate installation.
+
+Dual-screen support is experimental; Thor-specific touch and input-focus behavior still needs device testing. See the [dual-screen setup and testing guide](GRIMM-DUAL-SCREEN-TESTING.md) and [other Grimm testing notes](GRIMM-TESTING.md).
+
+## AI disclosure
+
+The Grimm changes were developed with AI assistance using **GPT-6.1 Sol Ultra**, under the maintainer's direction. Automated builds and checks are recorded separately from testing on real devices; a passing build does not establish device compatibility. Upstream Moonlight authors retain credit for the original project.
+
+## Upstream Moonlight Android
 
 [![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/232a8tadrrn8jv0k/branch/master?svg=true)](https://ci.appveyor.com/project/cgutman/moonlight-android/branch/master)
 [![Translation Status](https://hosted.weblate.org/widgets/moonlight/-/moonlight-android/svg-badge.svg)](https://hosted.weblate.org/projects/moonlight/moonlight-android/)
@@ -12,7 +31,7 @@ Moonlight also has a [PC client](https://github.com/moonlight-stream/moonlight-q
 
 You can follow development on our [Discord server](https://moonlight-stream.org/discord) and help translate Moonlight into your language on [Weblate](https://hosted.weblate.org/projects/moonlight/moonlight-android/).
 
-## Downloads
+## Upstream downloads
 * [Google Play Store](https://play.google.com/store/apps/details?id=com.limelight)
 * [Amazon App Store](https://www.amazon.com/gp/product/B00JK4MFN2)
 * [F-Droid](https://f-droid.org/packages/com.limelight)

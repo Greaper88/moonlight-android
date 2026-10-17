@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="title_touch_keyboard_tab">Show touchscreen keyboard tab</string>
+    <string name="summary_touch_keyboard_tab">Show a pull-out edge tab during streaming to open or hide the keyboard.</string>
+</resources>
