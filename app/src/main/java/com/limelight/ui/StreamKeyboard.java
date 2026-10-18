@@ -7,12 +7,14 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.limelight.R;
 import com.limelight.nvstream.input.ControllerPacket;
 import com.limelight.nvstream.input.KeyboardPacket;
 
@@ -27,14 +29,14 @@ public final class StreamKeyboard extends LinearLayout {
             ControllerPacket.LEFT_FLAG | ControllerPacket.RIGHT_FLAG;
     private static final long REPEAT_DELAY_MS = 350;
     private static final long REPEAT_INTERVAL_MS = 90;
+    private static final int LOCAL_FN_ACTION = 0x100;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Listener listener;
     private final Key[][] rows;
     private final TextView[][] buttons;
     private final StreamKeyboardNavigation navigation;
-    private int modifiers;
-    private int lastControllerButtons;
+    private final StreamKeyboardState state;
     private int navigationButtons;
 
     private final Runnable repeatNavigation = new Runnable() {
@@ -49,8 +51,13 @@ public final class StreamKeyboard extends LinearLayout {
     };
 
     public StreamKeyboard(Context context, Listener listener) {
+        this(context, listener, false);
+    }
+
+    public StreamKeyboard(Context context, Listener listener, boolean singlePressLock) {
         super(context);
         this.listener = listener;
+        state = new StreamKeyboardState(listener::onKeyActivated, singlePressLock, SystemClock::uptimeMillis);
         boolean compact = getResources().getConfiguration().screenWidthDp < 480 ||
                 getResources().getConfiguration().screenHeightDp < 300;
         setOrientation(VERTICAL);
@@ -61,12 +68,13 @@ public final class StreamKeyboard extends LinearLayout {
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
 
         TextView hint = new TextView(context);
-        hint.setText("Grimm keyboard  ·  D-pad: move  ·  A: type  ·  B: close");
+        hint.setText(context.getString(R.string.grimm_osk_hint) + "\n" + context.getString(singlePressLock ?
+                R.string.grimm_osk_bumper_toggle_hint : R.string.grimm_osk_bumper_hold_hint));
         hint.setTextColor(Color.WHITE);
         hint.setTextSize(compact ? 10 : 12);
         hint.setGravity(Gravity.CENTER);
         hint.setPadding(0, 0, 0, dp(3));
-        addView(hint, new LayoutParams(LayoutParams.MATCH_PARENT, dp(compact ? 19 : 23)));
+        addView(hint, new LayoutParams(LayoutParams.MATCH_PARENT, dp(compact ? 31 : 37)));
 
         rows = new Key[][] {
                 {key("Esc", KeyEvent.KEYCODE_ESCAPE), key("1", "!", KeyEvent.KEYCODE_1),
@@ -96,8 +104,9 @@ public final class StreamKeyboard extends LinearLayout {
                         letter("n", KeyEvent.KEYCODE_N), letter("m", KeyEvent.KEYCODE_M),
                         key(",", "<", KeyEvent.KEYCODE_COMMA), key(".", ">", KeyEvent.KEYCODE_PERIOD),
                         key("/", "?", KeyEvent.KEYCODE_SLASH), key("↑", KeyEvent.KEYCODE_DPAD_UP)},
-                {modifier("Alt", KeyboardPacket.MODIFIER_ALT), key("`", "~", KeyEvent.KEYCODE_GRAVE),
-                        wide("Space", KeyEvent.KEYCODE_SPACE, 5), key("←", KeyEvent.KEYCODE_DPAD_LEFT),
+                {modifier("Alt", KeyboardPacket.MODIFIER_ALT), modifier("Fn", LOCAL_FN_ACTION),
+                        wide("Super", KeyEvent.KEYCODE_META_LEFT, 2), key("`", "~", KeyEvent.KEYCODE_GRAVE),
+                        wide("Space", KeyEvent.KEYCODE_SPACE, 4), key("←", KeyEvent.KEYCODE_DPAD_LEFT),
                         key("↓", KeyEvent.KEYCODE_DPAD_DOWN), key("→", KeyEvent.KEYCODE_DPAD_RIGHT),
                         wide("Hide", KeyEvent.KEYCODE_UNKNOWN, 1.5f)}
         };
@@ -137,9 +146,10 @@ public final class StreamKeyboard extends LinearLayout {
     }
 
     public void handleControllerInput(int buttonFlags) {
-        int pressed = buttonFlags & ~lastControllerButtons;
+        int previousModifiers = state.getModifiers();
+        boolean previousFunctionLayer = state.isFunctionLayer();
+        int pressed = state.updateControllerButtons(buttonFlags);
         int previousNavigation = navigationButtons;
-        lastControllerButtons = buttonFlags;
         navigationButtons = buttonFlags & NAVIGATION_MASK;
 
         if ((pressed & ControllerPacket.B_FLAG) != 0) {
@@ -156,13 +166,15 @@ public final class StreamKeyboard extends LinearLayout {
         if ((pressed & ControllerPacket.A_FLAG) != 0) {
             activateSelection();
         }
+        if (previousModifiers != state.getModifiers() || previousFunctionLayer != state.isFunctionLayer()) {
+            refreshKeys();
+        }
     }
 
     public void resetInput() {
         handler.removeCallbacks(repeatNavigation);
-        lastControllerButtons = 0;
         navigationButtons = 0;
-        modifiers = 0;
+        state.resetInput();
         refreshKeys();
     }
 
@@ -177,15 +189,18 @@ public final class StreamKeyboard extends LinearLayout {
 
     private void activateSelection() {
         Key key = rows[navigation.getRow()][navigation.getColumn()];
-        if (key.modifier != 0) {
-            modifiers ^= key.modifier;
+        if (key.modifier == LOCAL_FN_ACTION) {
+            state.toggleFunctionLayer();
+        }
+        else if (key.modifier != 0) {
+            state.toggleModifier(key.modifier);
         }
         else if (key.keyCode == KeyEvent.KEYCODE_UNKNOWN) {
             listener.onCloseRequested();
             return;
         }
         else {
-            listener.onKeyActivated(key.keyCode, modifiers);
+            state.activateKey(key.keyCode);
         }
         refreshKeys();
     }
@@ -201,10 +216,13 @@ public final class StreamKeyboard extends LinearLayout {
                 Key key = rows[r][c];
                 TextView button = buttons[r][c];
                 boolean selected = r == navigation.getRow() && c == navigation.getColumn();
-                boolean active = key.modifier != 0 && (modifiers & key.modifier) != 0;
-                String label = (modifiers & KeyboardPacket.MODIFIER_SHIFT) != 0 ? key.shiftedLabel : key.label;
+                boolean active = key.modifier == LOCAL_FN_ACTION ? state.isFunctionLayer() :
+                        key.modifier != 0 && (state.getModifiers() & key.modifier) != 0;
+                String label = state.getLabel(key.keyCode, key.label, key.shiftedLabel);
                 button.setText(active ? label + " •" : label);
-                button.setContentDescription(("⌫".equals(label) ? "Backspace" : label) + (active ? " on" : ""));
+                button.setContentDescription(("⌫".equals(label) ? "Backspace" :
+                        key.keyCode == KeyEvent.KEYCODE_META_LEFT ? "Super (Windows key)" : label) +
+                        (active ? " on" : ""));
                 int color = selected ? Color.rgb(35, 108, 170) :
                         active ? Color.rgb(43, 100, 65) : Color.rgb(49, 54, 62);
                 StateListDrawable background = new StateListDrawable();

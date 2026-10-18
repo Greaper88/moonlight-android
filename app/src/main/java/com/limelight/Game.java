@@ -1797,7 +1797,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     public void onCloseRequested() {
                         hideStreamKeyboard(true);
                     }
-                });
+                }, prefConfig.oskBumperSinglePressLock);
                 streamKeyboard.setVisibility(View.GONE);
                 FrameLayout.LayoutParams layout = new FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,

@@ -38,7 +38,7 @@ public class StreamKeyboardNavigationCheck {
         check(navigation.getRow() == 2 && navigation.getColumn() == 0);
         navigation.move(0, 0);
         check(navigation.getRow() == 2 && navigation.getColumn() == 0);
-        int[] rowSizes = {14, 14, 13, 12, 7};
+        int[] rowSizes = {14, 14, 13, 12, 9};
         float[][] keyboard = new float[rowSizes.length][];
         for (int r = 0; r < keyboard.length; r++) {
             keyboard[r] = new float[rowSizes[r]];

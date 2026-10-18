@@ -224,7 +224,7 @@ public final class DualScreenControlsPresentation extends Presentation {
         root.addView(mouseButtons, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
 
-        keyboard = new StreamKeyboard(context, keyListener);
+        keyboard = new StreamKeyboard(context, keyListener, preferences.oskBumperSinglePressLock);
         keyboardContainer = new KeyboardContainer(context);
         keyboardContainer.addView(keyboard, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));

@@ -61,6 +61,7 @@ public class PreferenceConfiguration {
     static final String DUAL_SCREEN_CONTROLS_PREF_STRING = "checkbox_dual_screen_controls";
     static final String DUAL_SCREEN_DISPLAY_PREF_STRING = "list_dual_screen_control_display";
     private static final String TOUCH_KEYBOARD_TAB_PREF_STRING = "checkbox_touch_keyboard_tab";
+    private static final String OSK_BUMPER_MODE_PREF_STRING = "list_osk_bumper_mode";
     private static final String TOUCHSCREEN_TRACKPAD_PREF_STRING = "checkbox_touchscreen_trackpad";
     private static final String LATENCY_TOAST_PREF_STRING = "checkbox_enable_post_stream_toast";
     private static final String FRAME_PACING_PREF_STRING = "frame_pacing";
@@ -152,6 +153,7 @@ public class PreferenceConfiguration {
     public boolean showTouchKeyboardTab;
     public boolean dualScreenControls;
     public int dualScreenControlDisplayId = -1;
+    public boolean oskBumperSinglePressLock;
     public MoonBridge.AudioConfiguration audioConfiguration;
     public int framePacing;
     public boolean absoluteMouseMode;
@@ -605,6 +607,8 @@ public class PreferenceConfiguration {
             config.dualScreenControlDisplayId = -1;
         }
         config.showTouchKeyboardTab = prefs.getBoolean(TOUCH_KEYBOARD_TAB_PREF_STRING, false);
+        config.oskBumperSinglePressLock = "single_press_lock".equals(
+                prefs.getString(OSK_BUMPER_MODE_PREF_STRING, "hold_double_tap"));
         config.touchscreenTrackpad = prefs.getBoolean(TOUCHSCREEN_TRACKPAD_PREF_STRING, DEFAULT_TOUCHSCREEN_TRACKPAD);
         config.enableLatencyToast = prefs.getBoolean(LATENCY_TOAST_PREF_STRING, DEFAULT_LATENCY_TOAST);
         config.absoluteMouseMode = prefs.getBoolean(ABSOLUTE_MOUSE_MODE_PREF_STRING, DEFAULT_ABSOLUTE_MOUSE_MODE);

@@ -1273,41 +1273,18 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
         if (gestures.isKeyboardVisible()) {
             gestures.handleKeyboardControllerInput(getKeyboardInputMap());
+            // A keyboard button (notably B) can close the overlay synchronously and reset
+            // held mouse input. Do not restore the pre-callback analog snapshot afterward.
+            if (gestures.isKeyboardVisible() && originalContext.mouseEmulationActive) {
+                updateEmulatedMouseInput(originalContext, inputMap, leftTrigger, rightTrigger, true);
+            }
             conn.sendControllerInput(controllerNumber, getActiveControllerMask(),
                     0, (byte)0, (byte)0, (short)0, (short)0, (short)0, (short)0);
             return;
         }
 
         if (originalContext.mouseEmulationActive) {
-            originalContext.mouseEmulationDirectionalMap = inputMap;
-            int changedMask = inputMap ^  originalContext.mouseEmulationLastInputMap;
-
-            boolean aDown = (inputMap & ControllerPacket.A_FLAG) != 0;
-            boolean bDown = (inputMap & ControllerPacket.B_FLAG) != 0;
-
-            originalContext.mouseEmulationLastInputMap = inputMap;
-
-            if ((changedMask & ControllerPacket.A_FLAG) != 0) {
-                if (aDown) {
-                    conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT);
-                }
-                else {
-                    conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT);
-                }
-            }
-            if ((changedMask & ControllerPacket.B_FLAG) != 0) {
-                if (bDown) {
-                    conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_RIGHT);
-                }
-                else {
-                    conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_RIGHT);
-                }
-            }
-            originalContext.mouseScrollUp = (inputMap & ControllerPacket.LB_FLAG) != 0 ||
-                    HeldMouseScroll.isTriggerPressed(leftTrigger);
-            originalContext.mouseScrollDown = (inputMap & ControllerPacket.RB_FLAG) != 0 ||
-                    HeldMouseScroll.isTriggerPressed(rightTrigger);
-            originalContext.sendHeldMouseScroll(SystemClock.uptimeMillis());
+            updateEmulatedMouseInput(originalContext, inputMap, leftTrigger, rightTrigger, false);
 
             conn.sendControllerInput(controllerNumber, getActiveControllerMask(),
                     (short)0, (byte)0, (byte)0, (short)0, (short)0, (short)0, (short)0);
@@ -1319,6 +1296,34 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                     leftStickX, leftStickY,
                     rightStickX, rightStickY);
         }
+    }
+
+    private void updateEmulatedMouseInput(GenericControllerContext context, int inputMap,
+                                         byte leftTrigger, byte rightTrigger, boolean keyboardVisible) {
+        int mouseButtons = ControllerMouseInput.buttonsForMouse(inputMap, keyboardVisible);
+        context.mouseEmulationDirectionalMap = mouseButtons;
+        int changedMask = mouseButtons ^ context.mouseEmulationLastInputMap;
+        context.mouseEmulationLastInputMap = mouseButtons;
+
+        if ((changedMask & ControllerPacket.A_FLAG) != 0) {
+            if ((mouseButtons & ControllerPacket.A_FLAG) != 0) {
+                conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT);
+            }
+            else {
+                conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT);
+            }
+        }
+        if ((changedMask & ControllerPacket.B_FLAG) != 0) {
+            if ((mouseButtons & ControllerPacket.B_FLAG) != 0) {
+                conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_RIGHT);
+            }
+            else {
+                conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_RIGHT);
+            }
+        }
+        context.mouseScrollUp = ControllerMouseInput.scrollUp(inputMap, leftTrigger, keyboardVisible);
+        context.mouseScrollDown = ControllerMouseInput.scrollDown(inputMap, rightTrigger, keyboardVisible);
+        context.sendHeldMouseScroll(SystemClock.uptimeMillis());
     }
 
     private int getKeyboardInputMap() {
@@ -3038,13 +3043,11 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                 if (!mouseEmulationActive || stopped || destroyed) {
                     return;
                 }
-                if (gestures.isKeyboardVisible()) {
-                    resetHeldMouseScroll();
-                    mainThreadHandler.postDelayed(this, mouseEmulationReportPeriod);
-                    return;
-                }
                 sendHeldMouseScroll(SystemClock.uptimeMillis());
-                dpadMouse.update(mouseEmulationDirectionalMap, SystemClock.uptimeMillis());
+                // The keyboard owns digital controls while open. Sticks and trigger
+                // scrolling still use mouse mode after the usual neutral-input barrier.
+                dpadMouse.update(ControllerMouseInput.buttonsForMouse(mouseEmulationDirectionalMap,
+                        gestures.isKeyboardVisible()), SystemClock.uptimeMillis());
                 if (dpadMouse.getX() != 0 || dpadMouse.getY() != 0) {
                     conn.sendMouseMove(dpadMouse.getX(), dpadMouse.getY());
                 }

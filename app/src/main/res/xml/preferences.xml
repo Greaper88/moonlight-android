@@ -129,6 +129,13 @@
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/category_input_settings"
         android:key="category_input_settings">
+        <ListPreference
+            android:key="list_osk_bumper_mode"
+            android:title="@string/title_osk_bumper_mode"
+            android:summary="%s"
+            android:defaultValue="hold_double_tap"
+            android:entries="@array/osk_bumper_mode_entries"
+            android:entryValues="@array/osk_bumper_mode_values" />
         <CheckBoxPreference
             android:key="checkbox_dual_screen_controls"
             android:title="@string/title_dual_screen_controls"

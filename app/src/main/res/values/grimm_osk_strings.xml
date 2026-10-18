@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="title_osk_bumper_mode">Keyboard bumper behavior</string>
+    <string-array name="osk_bumper_mode_entries">
+        <item>Hold; double-tap to lock</item>
+        <item>Single press to lock</item>
+    </string-array>
+    <string-array name="osk_bumper_mode_values">
+        <item>hold_double_tap</item>
+        <item>single_press_lock</item>
+    </string-array>
+    <string name="grimm_osk_hint">D-pad: move · A: type · B: close · X: ⌫ · Y: Space</string>
+    <string name="grimm_osk_bumper_hold_hint">LB: Shift · RB: Fn · Hold to use; double-tap to lock</string>
+    <string name="grimm_osk_bumper_toggle_hint">LB: Shift lock · RB: Fn lock · Press again to unlock</string>
+</resources>

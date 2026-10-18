@@ -1,6 +1,6 @@
 # Moonlight (Grimm) — optional dual-screen controls
 
-Version **12.2.g5**, versionCode **319**. Install over the current Grimm app
+Version **12.2.g6**, versionCode **320**. Install over the current Grimm app
 without uninstalling. Package `com.limelight.sharedip` and signing key are retained;
 existing pairings, hosts and settings should carry over.
 
@@ -30,7 +30,11 @@ where the streaming Activity runs. Display IDs are not assumed to be 0 and 1.
   the keyboard and restores the full pad. Hold Select can also open it.
 - Controller input normally continues to the game while only the touchpad is
   visible. While the keyboard is open, D-pad/A/B navigate/type/close it, matching
-  the existing OSK behavior.
+  the existing OSK behavior. X sends Backspace, Y sends Space, LB holds Shift,
+  and RB holds Fn to change `1` through `=` to F1–F12. Double-tap locks a bumper;
+  single-press locking can be selected in Input Settings. Mouse-mode joysticks
+  and triggers still work while the keyboard is open. The touch keyboard also
+  has Fn and Super/Windows keys. See [OSK shortcut checks](GRIMM-OSK-SHORTCUTS-TESTING.md).
 
 This is a local control surface using the existing streaming connection. It does
 not create a second video stream or a second Wolf session.

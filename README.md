@@ -2,7 +2,7 @@
 
 A personal fork of [Moonlight for Android](https://github.com/moonlight-stream/moonlight-android), based on v12.2, with an on-screen keyboard (OSK), optional dual-screen controls, and shared-IP fixes for use with [Greaper88's Wolf fork](https://github.com/Greaper88/wolf).
 
-- **OSK:** touch and controller support, hold Select to toggle, and an optional touchscreen edge tab.
+- **OSK:** touch and controller support, hold Select to toggle, and an optional touchscreen edge tab. X sends Backspace, Y sends Space, LB holds Shift, and RB holds the F1–F12 layer. Double-tap a bumper to lock it, or choose single-press locking in Input Settings. On-screen Fn and Super/Windows keys are included. Joysticks and triggers keep working in mouse mode while the OSK is open.
 - **Dual-screen devices:** keep the stream on one display and use another as a touchpad and keyboard. Enable **Settings > Input Settings > Use second screen for controls**, then choose the **Controls screen**. This is **off by default**, including when connecting DeX. **Show stats** in the upper-left opens live stream and device readings; **Hide stats** restores the touchpad.
 - **Controller mouse controls:** D-pad movement and accelerated scrolling when holding the triggers or shoulder buttons in mouse mode.
 - **Low-bitrate shared-IP fix:** preserve the RTSP host identifier used by the Wolf fork to distinguish clients behind the same public IP.
